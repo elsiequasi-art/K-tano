@@ -1,6 +1,3 @@
-Warning: truncated output (original token count: 25171)
-Total output lines: 2079
-
 import ast
 import json
 import ipaddress
@@ -100,9 +97,9 @@ SECURITY_SIGNATURES = {
         "WEB-REDIRECT-001", "Endpoint returned a redirect; destination was not followed", "Info",
         "Review the redirect target and enter the exact destination URL separately if it is in scope.",
     ),
-    "head_unsupported": SecuritySignature(
-        "WEB-HEAD-001", "Endpoint did not accept the HEAD request", "Info",
-        "No fallback request was sent. Review the endpoint manually or use a safe method approved for the application.",
+    "method_unsupported": SecuritySignature(
+        "WEB-METHOD-001", "Endpoint did not accept the selected method", "Info",
+        "No alternate method was attempted. Review the endpoint manually and choose a method approved for the application.",
     ),
     "py_eval_exec": SecuritySignature(
         "PY-DYN-001", "Dynamic evaluation or execution is present", "High",
@@ -700,8 +697,19 @@ class AegisApp:
         ttk.Label(scope, text="One HTTP(S) URL").grid(row=0, column=0, sticky="w", padx=(0, 6))
         self.endpoint_var = tk.StringVar(value="")
         self.endpoint_entry = ttk.Entry(scope, textvariable=self.endpoint_var)
-        self.endpoint_entry.grid(row=0, column=1, columnspan=3, sticky="ew", pady=2)
+        self.endpoint_entry.grid(row=0, column=1, columnspan=2, sticky="ew", pady=2)
         self.endpoint_var.trace_add("write", self._endpoint_scope_changed)
+        ttk.Label(scope, text="Method").grid(row=0, column=3, sticky="e", padx=(6, 4))
+        self.endpoint_method_var = tk.StringVar(value="HEAD")
+        self.endpoint_method_box = ttk.Combobox(
+            scope,
+            textvariable=self.endpoint_method_var,
+            values=["HEAD", "OPTIONS", "GET", "HEAD+OPTIONS+GET suite"],
+            state="readonly",
+            width=10,
+        )
+        self.endpoint_method_box.grid(row=0, column=4, sticky="ew", pady=2)
+        self.endpoint_method_var.trace_add("write", self._endpoint_scope_changed)
         self.endpoint_authorized_var = tk.BooleanVar(value=False)
         self.endpoint_authorized_checkbox = ttk.Checkbutton(
             scope,
@@ -709,21 +717,21 @@ class AegisApp:
             variable=self.endpoint_authorized_var,
             command=self._refresh_endpoint_buttons,
         )
-        self.endpoint_authorized_checkbox.grid(row=1, column=0, columnspan=2, sticky="w", pady=(4, 0))
+        self.endpoint_authorized_checkbox.grid(row=1, column=0, columnspan=3, sticky="w", pady=(4, 0))
         self.endpoint_check_button = ttk.Button(
-            scope, text="Run header checks", command=self._run_endpoint_check
+            scope, text="Run endpoint check", command=self._run_endpoint_check
         )
-        self.endpoint_check_button.grid(row=1, column=2, sticky="e", padx=(4, 0), pady=(4, 0))
+        self.endpoint_check_button.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=(4, 0))
         self.endpoint_validate_button = ttk.Button(
             scope, text="Counter-test", command=self._counter_test_endpoint
         )
-        self.endpoint_validate_button.grid(row=1, column=3, sticky="e", padx=(4, 0), pady=(4, 0))
+        self.endpoint_validate_button.grid(row=1, column=4, sticky="e", padx=(4, 0), pady=(4, 0))
         ttk.Label(
             scope,
-            text="One HEAD request only; no credentials, query string, body, payloads, or redirects. Each check asks for fresh confirmation. Header signatures and code heuristics are review leads, not proof of exploitability.",
+            text="Choose HEAD, OPTIONS, GET, or the three-method suite (sequentially) for this exact URL. No credentials, query string, body read, payloads, or redirects. GET can invoke app logic. Each run asks for fresh confirmation; findings are review leads, not proof.",
             foreground="#555555",
             wraplength=760,
-        ).grid(row=2, column=0, columnspan=4, sticky="w", pady=(4, 0))
+        ).grid(row=2, column=0, columnspan=5, sticky="w", pady=(4, 0))
 
         summary = ttk.Frame(tab)
         summary.grid(row=1, column=0, sticky="ew", pady=(2, 6))
@@ -807,10 +815,21 @@ class AegisApp:
             current_endpoint = validate_endpoint_url(self.endpoint_var.get())
         except ValueError:
             current_endpoint = ""
-        has_baseline = current_endpoint in self.endpoint_baselines
+        methods = self._selected_endpoint_methods()
+        has_baseline = bool(current_endpoint) and all(
+            f"{method} {current_endpoint}" in self.endpoint_baselines for method in methods
+        )
         self.endpoint_validate_button.configure(
             state="normal" if authorized and has_baseline else "disabled"
         )
+
+    def _selected_endpoint_methods(self) -> tuple[str, ...]:
+        selection = self.endpoint_method_var.get()
+        if selection == "HEAD+OPTIONS+GET suite":
+            return ("HEAD", "OPTIONS", "GET")
+        if selection in ("HEAD", "OPTIONS", "GET"):
+            return (selection,)
+        return ()
 
     def _start_endpoint_check(self, counter_test: bool) -> None:
         if self.busy:
@@ -827,7 +846,12 @@ class AegisApp:
         except ValueError as error:
             messagebox.showwarning("Invalid endpoint", str(error), parent=self.root)
             return
-        if counter_test and endpoint not in self.endpoint_baselines:
+        methods = self._selected_endpoint_methods()
+        if not methods:
+            self.status_var.set("Choose HEAD, OPTIONS, GET, or the three-method suite.")
+            return
+        endpoint_keys = [f"{method} {endpoint}" for method in methods]
+        if counter_test and not all(key in self.endpoint_baselines for key in endpoint_keys):
             self.status_var.set("Run the initial header check for this exact URL before counter-testing.")
             return
 
@@ -835,8 +859,8 @@ class AegisApp:
         title = "Confirm endpoint counter-test" if counter_test else "Confirm endpoint check"
         if not messagebox.askyesno(
             title,
-            f"Aegis will send one HEAD request to:\n\n{endpoint}\n\n"
-            "It will not send credentials or a request body, follow redirects, or try payloads. "
+            f"Aegis will send {len(methods)} request(s) ({', '.join(methods)}) to this exact URL:\n\n{endpoint}\n\n"
+            f"It will not send credentials, a request body, follow redirects, or try payloads. {('GET can invoke application logic. ' if 'GET' in methods else '')}"
             "Continue only if you are authorized to assess this exact endpoint.",
             parent=self.root,
         ):
@@ -845,13 +869,13 @@ class AegisApp:
         self._record_assessment_event(
             "Endpoint " + action,
             endpoint,
-            "One authorized HEAD request queued; redirects are disabled.",
+            f"User confirmed endpoint method(s): {', '.join(methods)}; redirects are disabled.",
         )
         self._set_busy(True)
-        self.status_var.set("Running one authorized endpoint header check…")
+        self.status_var.set(f"Running authorized endpoint method(s): {', '.join(methods)}…")
         threading.Thread(
             target=self._endpoint_check_worker,
-            args=(endpoint, counter_test),
+            args=(endpoint, methods, counter_test),
             daemon=True,
         ).start()
 
@@ -861,59 +885,329 @@ class AegisApp:
     def _counter_test_endpoint(self) -> None:
         self._start_endpoint_check(counter_test=True)
 
-    def _endpoint_check_worker(self, endpoint: str, counter_test: bool) -> None:
-        request = urllib.request.Request(
-            endpoint,
-            headers={"User-Agent": "Aegis-Authorized-Header-Check/1.0"},
-            method="HEAD",
-        )
+    def _endpoint_check_worker(self, endpoint: str, methods: tuple[str, ...], counter_test: bool) -> None:
         opener = urllib.request.build_opener(NoRedirectHandler())
-        try:
-            try:
-                response = opener.open(request, timeout=ENDPOINT_CHECK_TIMEOUT)
-            except urllib.error.HTTPError as error:
-                response = error
-            with response:
-                status_code = int(response.code)
-                headers = response.headers
-            if 300 <= status_code < 400:
-                findings = [{
-                    "signature_id": SECURITY_SIGNATURES["redirect_not_followed"].signature_id,
-                    "rule_key": "redirect_not_followed",
-                    "title": SECURITY_SIGNATURES["redirect_not_followed"].title,
-                    "severity": SECURITY_SIGNATURES["redirect_not_followed"].severity,
-                    "evidence": f"HTTP {status_code}; redirect destination was not followed or recorded.",
-                    "remediation": SECURITY_SIGNATURES["redirect_not_followed"].remediation,
-                }]
-            elif status_code in (405, 501):
-                findings = [{
-                    "signature_id": SECURITY_SIGNATURES["head_unsupported"].signature_id,
-                    "rule_key": "head_unsupported",
-                    "title": SECURITY_SIGNATURES["head_unsupported"].title,
-                    "severity": SECURITY_SIGNATURES["head_unsupported"].severity,
-                    "evidence": f"HTTP {status_code}; Aegis did not fall back to another method.",
-                    "remediation": SECURITY_SIGNATURES["head_unsupported"].remediation,
-                }]
-            else:
-                findings = evaluate_security_headers(
-                    headers,
-                    urllib.parse.urlsplit(endpoint).scheme == "https",
-                )
-            self.result_queue.put((
-                "endpoint_assessment",
+        results = []
+        for method in methods:
+            request = urllib.request.Request(
                 endpoint,
-                {
+                headers={"User-Agent": "Aegis-Authorized-Endpoint-Check/1.0"},
+                method=method,
+            )
+            try:
+                try:
+                    response = opener.open(request, timeout=ENDPOINT_CHECK_TIMEOUT)
+                except urllib.error.HTTPError as error:
+                    response = error
+                with response:
+                    status_code = int(response.code)
+                    headers = response.headers
+                if 300 <= status_code < 400:
+                    findings = [{
+                        "signature_id": SECURITY_SIGNATURES["redirect_not_followed"].signature_id,
+                        "rule_key": "redirect_not_followed",
+                        "title": SECURITY_SIGNATURES["redirect_not_followed"].title,
+                        "severity": SECURITY_SIGNATURES["redirect_not_followed"].severity,
+                        "evidence": f"HTTP {status_code}; redirect destination was not followed or recorded.",
+                        "remediation": SECURITY_SIGNATURES["redirect_not_followed"].remediation,
+                    }]
+                elif status_code in (405, 501):
+                    findings = [{
+                        "signature_id": SECURITY_SIGNATURES["method_unsupported"].signature_id,
+                        "rule_key": "method_unsupported",
+                        "title": SECURITY_SIGNATURES["method_unsupported"].title,
+                        "severity": SECURITY_SIGNATURES["method_unsupported"].severity,
+                        "evidence": f"HTTP {status_code}; Aegis did not try another method for this check.",
+                        "remediation": SECURITY_SIGNATURES["method_unsupported"].remediation,
+                    }]
+                else:
+                    findings = evaluate_security_headers(
+                        headers,
+                        urllib.parse.urlsplit(endpoint).scheme == "https",
+                    )
+                results.append({
                     "status_code": status_code,
+                    "method": method,
+                    "allow_header": (headers.get("Allow", "")[:200] if method == "OPTIONS" else ""),
                     "findings": findings,
                     "counter_test": counter_test,
                     "validation_complete": not (300 <= status_code < 400 or status_code in (405, 501)),
-                },
-            ))
-        except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
-            self.result_queue.put(("endpoint_error", endpoint, f"The endpoint check stopped: {error}"))
+                })
+            except (urllib.error.URLError, TimeoutError, OSError, ValueError) as error:
+                if results:
+                    self.result_queue.put(("endpoint_suite", endpoint, results))
+                self.result_queue.put(("endpoint_error", endpoint, f"{method} request stopped the endpoint suite: {error}"))
+                return
+        self.result_queue.put(("endpoint_suite", endpoint, results))
 
     def _record_assessment_event(self, action: str, asset: str, detail: str) -> None:
-      …3171 tokens truncated…ediation')}\n",
+        self.assessment_events.append({
+            "time": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "action": action,
+            "asset": asset,
+            "detail": detail,
+        })
+        self._refresh_assessment_summary()
+        self._refresh_assessment_actions()
+
+    def _record_endpoint_result(self, endpoint: str, result: dict, finish: bool = True) -> None:
+        current = {finding["rule_key"]: finding for finding in result["findings"]}
+        open_findings = [
+            finding for finding in self.findings
+            if finding["asset"] == endpoint and finding["source"] == "HTTP response headers" and finding["status"] != "Resolved"
+        ]
+        open_by_rule = {finding["rule_key"]: finding for finding in open_findings}
+        resolved_count = 0
+        persisted_count = 0
+        for rule_key, existing in open_by_rule.items():
+            if rule_key not in current and result["counter_test"] and result.get("validation_complete", True):
+                existing["status"] = "Resolved"
+                existing["validation"] = "No longer observed during counter-test"
+                existing["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                resolved_count += 1
+        for rule_key, detail in current.items():
+            existing = open_by_rule.get(rule_key)
+            if existing is None:
+                existing = {
+                    **detail,
+                    "asset": endpoint,
+                    "source": "HTTP response headers",
+                    "status": "Open",
+                    "validation": "New observation",
+                    "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                }
+                self.findings.append(existing)
+            else:
+                existing.update(detail)
+                existing["status"] = "Open"
+                existing["validation"] = "Still observed during counter-test" if result["counter_test"] else existing.get("validation", "Open")
+                if result["counter_test"]:
+                    persisted_count += 1
+            existing["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+        if result.get("validation_complete", True):
+            self.endpoint_baselines[endpoint] = sorted(current)
+        check_name = f"{result['method']} counter-test" if result["counter_test"] else f"{result['method']} endpoint check"
+        if result["counter_test"] and not result.get("validation_complete", True):
+            detail = f"{result['method']} HTTP {result['status_code']}; recheck inconclusive, earlier findings retained."
+        elif result["counter_test"]:
+            detail = f"{result['method']} HTTP {result['status_code']}; {resolved_count} resolved, {persisted_count} still observed, {max(0, len(current) - persisted_count)} new."
+        else:
+            detail = f"{result['method']} HTTP {result['status_code']}; {len(current)} signature finding(s) observed."
+        if result.get("allow_header"):
+            detail += f" Allow: {result['allow_header']}"
+        self._record_assessment_event(check_name, endpoint, detail)
+        self._render_findings()
+        if finish:
+            self.status_var.set(detail)
+            self._set_busy(False)
+
+    def _record_endpoint_suite(self, endpoint: str, results: list[dict]) -> None:
+        for result in results:
+            self._record_endpoint_result(f"{result['method']} {endpoint}", result, finish=False)
+        summary = "; ".join(
+            f"{result['method']}={result['status_code']} ({len(result['findings'])} finding(s))"
+            for result in results
+        )
+        self.status_var.set(f"Endpoint check complete: {summary}")
+        self._set_busy(False)
+
+    def _record_port_results(self, target: str, ports: list[int], open_ports: list[int]) -> None:
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        prior = self.port_baselines.setdefault(target, {})
+        current_open = set(open_ports)
+        for port in ports:
+            key = f"{target}:{port}"
+            existing = next((finding for finding in self.findings if finding.get("signature_id") == "TCP-OPEN-001" and finding["asset"] == key and finding["status"] != "Resolved"), None)
+            if port in current_open:
+                evidence = "A TCP connect succeeded from this computer; this does not identify a service."
+                if existing is None:
+                    self.findings.append({
+                        "signature_id": "TCP-OPEN-001",
+                        "rule_key": "tcp_open",
+                        "title": "TCP port accepted a connection",
+                        "severity": "Info",
+                        "asset": key,
+                        "source": "TCP connect check",
+                        "status": "Open",
+                        "validation": "New observation" if port not in prior else "Open on repeat check",
+                        "evidence": evidence,
+                        "remediation": "Confirm the listener is expected and restrict exposure according to the asset's role.",
+                        "created_at": timestamp,
+                        "updated_at": timestamp,
+                    })
+                else:
+                    existing["evidence"] = evidence
+                    existing["validation"] = "Still open on repeat check"
+                    existing["updated_at"] = timestamp
+                    existing["status"] = "Open"
+                prior[port] = True
+            else:
+                if existing is not None and prior.get(port):
+                    existing["status"] = "Resolved"
+                    existing["validation"] = "Not observed open on repeat check"
+                    existing["evidence"] = "The TCP connect did not succeed on this repeat check; this is not proof that the port is always closed."
+                    existing["updated_at"] = timestamp
+                prior[port] = False
+        self._render_findings()
+        self._record_assessment_event(
+            "TCP connect check",
+            target,
+            f"Checked {len(ports)} requested TCP port(s); {len(open_ports)} accepted a connection ({', '.join(map(str, open_ports)) or 'none observed'}).",
+        )
+
+    def _analyze_python_file(self) -> None:
+        if self.busy:
+            return
+        selected = filedialog.askopenfilename(
+            title="Choose one Python source file for local static analysis",
+            filetypes=[("Python source", "*.py"), ("All files", "*.*")],
+        )
+        if not selected:
+            return
+        path = Path(selected)
+        try:
+            size = path.stat().st_size
+        except OSError as error:
+            messagebox.showerror("Could not inspect file", str(error), parent=self.root)
+            return
+        if size > MAX_FILE_BYTES:
+            messagebox.showwarning("File too large", "Choose a Python file smaller than 256 KiB.", parent=self.root)
+            return
+        if path.suffix.lower() != ".py":
+            messagebox.showwarning("Python file required", "The local static engine currently analyzes Python source only.", parent=self.root)
+            return
+        if not messagebox.askyesno(
+            "Confirm local static analysis",
+            f"Aegis will read and analyze this file locally:\n\n{path}\n\n"
+            "It will not execute the file or send its contents to the AI. Continue?",
+            parent=self.root,
+        ):
+            return
+        try:
+            source = path.read_text(encoding="utf-8", errors="replace")
+        except OSError as error:
+            messagebox.showerror("Could not read Python source", str(error), parent=self.root)
+            return
+        self.last_analyzed_source = source
+        self.last_analyzed_path = str(path)
+        self._record_assessment_event("Python static analysis", path.name, "Local source analysis authorized and queued.")
+        self._set_busy(True)
+        self.status_var.set(f"Analyzing {path.name} locally…")
+        threading.Thread(
+            target=self._python_analysis_worker,
+            args=(str(path), path.name, source),
+            daemon=True,
+        ).start()
+
+    def _python_analysis_worker(self, path_key: str, file_name: str, source: str) -> None:
+        try:
+            findings, error = analyze_python_source(source)
+        except Exception as analysis_error:
+            findings, error = [], f"Local analysis stopped safely: {type(analysis_error).__name__}."
+        self.result_queue.put((
+            "static_assessment",
+            path_key,
+            {"file_name": file_name, "findings": findings, "error": error},
+        ))
+
+    def _record_static_result(self, path_key: str, result: dict) -> None:
+        if result["error"]:
+            self._record_assessment_event("Python static analysis", result["file_name"], result["error"])
+            self._write_conversation("Static analysis", result["error"])
+            self.status_var.set("Python source could not be analyzed; no file code was executed.")
+            self._set_busy(False)
+            return
+        current = {(item["rule_key"], item["line"]): item for item in result["findings"]}
+        previous = [
+            finding for finding in self.findings
+            if finding.get("asset_key") == path_key
+            and finding.get("source") == "Python static analysis"
+            and finding.get("status") != "Resolved"
+        ]
+        previous_by_location = {
+            (finding.get("rule_key"), finding.get("line")): finding for finding in previous
+        }
+        resolved_count = 0
+        for location, existing in previous_by_location.items():
+            if location not in current:
+                existing["status"] = "Resolved"
+                existing["validation"] = "No longer detected during local re-analysis"
+                existing["updated_at"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+                resolved_count += 1
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        for location, detail in current.items():
+            existing = previous_by_location.get(location)
+            if existing is None:
+                self.findings.append({
+                    **detail,
+                    "asset": result["file_name"],
+                    "asset_key": path_key,
+                    "source": "Python static analysis",
+                    "status": "Open",
+                    "validation": "New observation",
+                    "created_at": timestamp,
+                    "updated_at": timestamp,
+                })
+            else:
+                existing.update(detail)
+                existing["status"] = "Open"
+                existing["validation"] = "Still detected during local re-analysis"
+                existing["updated_at"] = timestamp
+        self._render_findings()
+        self._record_assessment_event(
+            "Python static analysis",
+            result["file_name"],
+            f"{len(current)} signature or heuristic finding(s); {resolved_count} prior finding(s) no longer detected. Source was not executed.",
+        )
+        self.status_var.set(
+            f"Local Python analysis complete: {len(current)} finding(s), {resolved_count} no longer detected. Review heuristic results."
+        )
+        self._set_busy(False)
+
+    def _render_findings(self) -> None:
+        for item in self.findings_view.get_children():
+            self.findings_view.delete(item)
+        for index, finding in enumerate(self.findings):
+            self.findings_view.insert(
+                "",
+                "end",
+                iid=str(index),
+                values=(
+                    finding.get("severity", "Info"),
+                    finding.get("status", "Open"),
+                    finding.get("signature_id", ""),
+                    finding.get("asset", ""),
+                    finding.get("title", ""),
+                ),
+            )
+        self._refresh_assessment_summary()
+
+    def _refresh_assessment_summary(self) -> None:
+        if not hasattr(self, "assessment_summary_var"):
+            return
+        open_count = sum(finding.get("status") != "Resolved" for finding in self.findings)
+        resolved_count = len(self.findings) - open_count
+        self.assessment_summary_var.set(
+            f"{len(self.assessment_events)} action(s) logged · {open_count} open finding(s) · {resolved_count} resolved"
+        )
+
+    def _show_selected_finding(self, _event=None) -> None:
+        selected = self.findings_view.selection()
+        self.finding_details.configure(state="normal")
+        self.finding_details.delete("1.0", "end")
+        if selected:
+            index = int(selected[0])
+            if 0 <= index < len(self.findings):
+                finding = self.findings[index]
+                self.finding_details.insert(
+                    "1.0",
+                    f"{finding.get('severity')} · {finding.get('status')} · {finding.get('signature_id')}\n"
+                    f"Asset: {finding.get('asset')}\n"
+                    f"Source: {finding.get('source', 'Assessment rule')}\n"
+                    f"Evidence: {finding.get('evidence')}\n"
+                    f"Validation: {finding.get('validation', 'Not rechecked')}\n"
+                    f"Recommendation: {finding.get('remediation')}\n",
                 )
         self.finding_details.configure(state="disabled")
 
@@ -1114,7 +1408,7 @@ class AegisApp:
     def _assessment_payload(self) -> dict:
         return {
             "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "engine_scope": "Single literal IP TCP connect checks (up to 32 ports), one explicitly authorized HTTP(S) HEAD endpoint, and user-selected Python files up to 256 KiB.",
+            "engine_scope": "Single literal IP TCP connect checks (up to 32 ports), one explicitly authorized HTTP(S) endpoint using HEAD, OPTIONS, GET, or their sequential suite, and user-selected Python files up to 256 KiB analyzed locally without execution.",
             "events": self.assessment_events,
             "findings": self.findings,
         }
@@ -1632,8 +1926,8 @@ class AegisApp:
                     if not self.input.get("1.0", "end-1c").strip():
                         self.input.insert("1.0", user_text)
                     self.status_var.set("Request failed. Correct the issue and try again.")
-                elif kind == "endpoint_assessment":
-                    self._record_endpoint_result(user_text, content)
+                elif kind == "endpoint_suite":
+                    self._record_endpoint_suite(user_text, content)
                     continue
                 elif kind == "endpoint_error":
                     self._record_assessment_event("Endpoint check error", user_text, content)
@@ -1809,6 +2103,7 @@ class AegisApp:
         self.authorization_checkbox.configure(state="disabled" if value else "normal")
         self.web_search_checkbox.configure(state=state)
         self.endpoint_entry.configure(state="disabled" if value else "normal")
+        self.endpoint_method_box.configure(state="disabled" if value else "readonly")
         self.endpoint_authorized_checkbox.configure(state="disabled" if value else "normal")
         self.use_tool_button.configure(state="disabled" if value or not self.last_tool_output else "normal")
         self._refresh_tool_buttons()
