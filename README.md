@@ -1,54 +1,51 @@
-# K-tano — Aegis Ethical Security Assistant
+# Aegis Desktop — Ethical Security Assistant
 
-Aegis is a Windows desktop AI assistant for authorized, defensive security work. Its task modes cover code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, and safe learning exercises.
+Aegis is a Windows desktop client for authorized, defensive security work. It provides task modes for code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, safe learning exercises, and user-triggered web research.
 
-The app analyzes text you provide or explicitly choose to open. Its local tools are user-triggered: three fixed read-only diagnostics, a single-IP TCP connect check capped at 32 ports, and a button to open installed Wireshark. Each diagnostic uses a structured allowlist entry with a fixed absolute executable path and argument list, and streams stdout to the console buffer. Every diagnostic, scan, and Wireshark launch asks the user to confirm authorization. It does not execute arbitrary AI-generated commands, accept free-form command arguments, use stealth modes, or modify reviewed files. Wireshark capture interfaces and start/stop controls remain in Wireshark.
+The app analyzes text you provide or explicitly choose to open. Its assessment dashboard adds a bounded single-IP TCP connect check, explicitly authorized HTTP(S) endpoint checks using HEAD, OPTIONS, GET, or a sequential three-method suite, and local Python static heuristics. Local commands remain fixed read-only diagnostics, and the app does not execute arbitrary commands or modify reviewed files.
 
-The user may also enable live web search per request before clicking Send. Search options include an exact query, optional allowed hostnames (up to 10), and low, medium, or high search context. The default is low for focused results. Search-enabled answers display clickable inline citations and source links. Web search is limited to research; it does not probe or scan targets.
+## Requirements
 
-The Assessment dashboard records scoped TCP connect results, HTTP response-header signatures, and local Python static-analysis findings. TCP checks accept one literal IP and up to 32 ports. Endpoint checks send one HEAD request to one exact HTTP(S) URL and never follow redirects or send credentials, a body, or test payloads. The counter-test repeats the same request and compares open findings. Each network action requires an authorization checkbox plus a fresh confirmation dialog. The Python analyzer reads one user-selected `.py` file up to 256 KiB, detects selected unsafe patterns and loop/performance heuristics, and never executes source code. It does not discover arbitrary hosts or crawl endpoints.
+- Windows 10 or 11
+- An OpenAI API key and access to a text-capable API model
+- Internet access for model requests and optional web search
 
-Findings and action logs export to Markdown or JSON. The dashboard prepares server configuration drafts for Nginx, Apache, or IIS and can fill the chat with a structured code-patch request. The user reviews the prompt and clicks Send; saving drafts requires confirmation. Aegis never applies or executes generated patches or remediation scripts.
+Aegis does not include or store an API key. You can enter one for the current session or set the OPENAI_API_KEY environment variable before launching. The key is held in memory by the app and is never written to its settings or source files.
 
-## Windows setup
+## Build and install
 
-Requirements: Windows 10 or 11, Python 3.10 or newer with Tkinter for building from source, an OpenAI API key, and internet access for model requests.
+1. Install Python 3.10 or newer with Tkinter.
+2. Open PowerShell in this folder.
+3. Run .\build_windows.ps1. This creates a self-contained dist\Aegis.exe.
+4. Run .\install_windows.ps1 to copy Aegis into your per-user Programs folder and add a Start menu shortcut.
 
-To build and install from source:
+The build script downloads PyInstaller into a project-local virtual environment. It does not require administrator access.
 
-1. Open PowerShell in this repository.
-2. Run **.\build_windows.ps1** to create **dist\Aegis.exe**.
-3. Run **.\install_windows.ps1** to install Aegis for the current user and add a Start menu shortcut.
+## Use
 
-The build uses PyInstaller from **requirements-build.txt** in a project-local virtual environment. No administrator access is required.
+- Choose a task mode, such as Code review or Threat model.
+- Paste text or use Add text file to load a source, log, or configuration file up to 256 KiB.
+- Review the request, then click Send. Nothing is sent before that action.
+- For current research, enable **Search the live web for this request** before clicking Send. Enter an exact search query if useful, restrict results to up to 10 hostnames (for example, `nist.gov, cisa.gov`), and choose low, medium, or high source detail. Low is the focused default.
+- Search-enabled responses show clickable inline citations and a clickable source list. Source detail controls how much search context the model receives; it does not guarantee an exact number of sources.
+- Save the latest answer as a Markdown or text report.
+- Use Clear session to remove the visible conversation and in-memory history.
 
-## API key and privacy
+Aegis sends the request and selected conversation context to the OpenAI Responses API with response storage disabled. If web search is enabled, the request uses OpenAI's hosted live web search and any configured domain filters. Provider policies still govern handling and retention, and API usage may incur charges. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
 
-Aegis does not include or save an API key. Enter a key in the app for the current session or set **OPENAI_API_KEY** before launching. The key is not written to settings or source files.
+## Assessment dashboard
 
-Your prompt, selected file text, and recent conversation context are sent to the OpenAI Responses API only after you click Send. If live web search is enabled, the request also invokes OpenAI's hosted web search and applies the optional domain filters. Local diagnostic output stays on this PC unless you choose Use last tool result and then click Send. Requests set response storage to false, and Aegis does not save conversation history locally. Provider policies still govern data handling and retention; API usage may incur charges. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
+- **TCP discovery:** one literal IP and up to 32 explicitly entered TCP ports. Each run shows the exact scope and requires a fresh authorization confirmation.
+- **Endpoint signatures:** one exact HTTP(S) URL with HEAD, OPTIONS, GET, or a sequential suite of those three methods. GET may invoke application logic; Aegis reads response headers only. It sends no credentials, query strings, request body, redirects, crawls, or test payloads. A counter-test repeats the same method(s) and compares findings; every run requires fresh authorization.
+- **Python analysis:** choose one `.py` file up to 256 KiB. A local AST and pattern engine flags selected risky APIs, possible hard-coded secrets (values are withheld), unbounded loops, nested loops, and regex compilation inside loops. It never executes the file. Findings are heuristics for review, not proof of a vulnerability or performance defect.
+- **Audit and remediation:** findings and action logs can be exported as Markdown or JSON. The dashboard can save Nginx, Apache, or IIS configuration drafts and prepare an AI patch request. Saving asks for confirmation; AI requests require a separate Send click. Drafts are not applied or executed.
 
-The local Python analyzer never sends file contents. If you ask the AI to prepare a code patch, Aegis asks whether to include the last analyzed source; it remains in the request box until you click Send. Assessment exports and remediation drafts are written only after a file selection and explicit confirmation.
-
-This build is intended for one person's local use with their own API key. Do not embed or distribute a personal key with the app. A multi-user service would need a trusted server-side credential design.
-
-## Task modes
-
-- General security assistant
-- Code review
-- Configuration review
-- Threat model
-- Incident triage
-- Vulnerability explanation
-- Hardening plan
-- Learning lab
-
-Use Add text file to load a source, log, or configuration file up to 256 KiB. Nothing is sent until you click Send. For precise current research, enable web search, enter an optional exact query, restrict allowed hostnames if helpful, and choose source detail. Save the latest answer as a Markdown or text report; search sources are included as links.
+The active checks are intentionally bounded to one IP/port list or one endpoint. They do not enumerate hosts, crawl sites, attempt exploits, or perform stealth activity. The Python analyzer never executes user-selected source; dynamic behavior tests for source code require a separate sandbox and are not part of this desktop build. Use active checks only on assets you own or are explicitly authorized to assess.
 
 ## Safety boundary
 
-Aegis is advisory software with limited, explicit local controls, not an autonomous penetration-testing engine. The TCP check accepts one literal IP and up to 32 comma-separated ports, and requires an authorization checkbox plus a fresh confirmation dialog. It makes sequential TCP connection attempts only; it does not perform UDP scans, service enumeration, stealth, exploitation, or broad-range scanning. The fixed local diagnostics and Wireshark launcher also ask for authorization. The AI cannot trigger these controls.
+Aegis is an advisory assistant, not a penetration-testing engine. It is designed for scoped, authorized security work and refuses actionable help for credential theft, malware, persistence, evasion, exfiltration, destructive activity, and unauthorized access. Live web searches occur only when the user enables the option and clicks Send. Search is limited by optional hostname filters and never probes or scans a target. Local commands remain a fixed allowlist and require explicit authorization; arbitrary AI-generated commands and stealth scans are excluded.
 
-The complete assistant persona is in [PERSONA.md](PERSONA.md).
+See PERSONA.md for the complete system prompt.
 
 
