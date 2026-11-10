@@ -2,7 +2,7 @@
 
 Aegis is a Windows desktop client for authorized, defensive security work. It provides task modes for code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, safe learning exercises, and user-triggered web research.
 
-Aegis organizes AI guidance, authorized network checks, code assessment, and digital-forensics workflows into separate tabs. It can inspect private IPv4 subnets with capped TCP connection checks, perform a verified TLS handshake inspection, review PCAP/PCAPNG files locally with Wireshark TShark, triage selected text logs with the AI after you review and send them, run HTTP header checks, analyze Python source, and execute synthetic Python suites in Docker Desktop's Linux VM. Local commands stay in a fixed allowlist; arbitrary AI-generated shell commands and credential guessing are excluded.
+Aegis organizes AI guidance, authorized network checks, code assessment, and digital-forensics workflows into Assistant, Network, Assessment, and Forensics tabs. It can inspect private IPv4 subnets with capped TCP connection checks, perform a verified TLS handshake inspection, review PCAP/PCAPNG files locally with Wireshark TShark, triage selected text logs with the AI after you review and send them, run HTTP header checks, analyze Python source, and execute synthetic Python suites in Docker Desktop's Linux VM. Local commands stay in a fixed allowlist; arbitrary AI-generated shell commands and credential guessing are excluded.
 
 ## Requirements
 
