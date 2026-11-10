@@ -9,6 +9,7 @@ import subprocess
 import threading
 import urllib.error
 import urllib.request
+from dataclasses import dataclass
 from pathlib import Path
 import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
@@ -22,11 +23,27 @@ MAX_INPUT_CHARACTERS = 80_000
 MAX_HISTORY_MESSAGES = 10
 MAX_SCAN_PORTS = 32
 SCAN_CONNECT_TIMEOUT = 0.4
+MAX_DIAGNOSTIC_OUTPUT = 25_000
 
+
+@dataclass(frozen=True)
+class LocalDiagnosticConfig:
+    executable: Path
+    arguments: tuple[str, ...]
+    timeout_seconds: int = 15
+
+
+SYSTEM_DIRECTORY = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
 LOCAL_DIAGNOSTICS = {
-    "Network configuration (ipconfig /all)": ["ipconfig.exe", "/all"],
-    "Active connections (netstat -ano)": ["netstat.exe", "-ano"],
-    "Current user groups (whoami /all)": ["whoami.exe", "/all"],
+    "Network configuration (ipconfig /all)": LocalDiagnosticConfig(
+        SYSTEM_DIRECTORY / "ipconfig.exe", ("/all",)
+    ),
+    "Active connections (netstat -ano)": LocalDiagnosticConfig(
+        SYSTEM_DIRECTORY / "netstat.exe", ("-ano",)
+    ),
+    "Current user groups (whoami /all)": LocalDiagnosticConfig(
+        SYSTEM_DIRECTORY / "whoami.exe", ("/all",)
+    ),
 }
 
 TASKS = {
@@ -192,7 +209,7 @@ class AegisApp:
         )
         privacy.grid(row=3, column=0, sticky="ew", pady=(0, 8))
 
-        conversation = ttk.LabelFrame(container, text="Conversation", padding=8)
+        conversation = ttk.LabelFrame(container, text="Conversation and console output", padding=8)
         conversation.grid(row=4, column=0, sticky="nsew", pady=(0, 8))
         conversation.rowconfigure(0, weight=1)
         conversation.columnconfigure(0, weight=1)
@@ -243,8 +260,8 @@ class AegisApp:
         if self.busy:
             return
         label = self.command_var.get()
-        command = LOCAL_DIAGNOSTICS.get(label)
-        if not command:
+        config = LOCAL_DIAGNOSTICS.get(label)
+        if config is None:
             self.status_var.set("Choose one of the listed local diagnostics.")
             return
         if not messagebox.askyesno(
@@ -258,32 +275,73 @@ class AegisApp:
         self.last_tool_output = ""
         self._set_busy(True)
         self.status_var.set(f"Running {label} locally…")
+        self._write_conversation(
+            label,
+            f"Running the fixed diagnostic configuration. Live output follows; timeout is {config.timeout_seconds} seconds.",
+        )
         threading.Thread(
             target=self._local_command_worker,
-            args=(label, command),
+            args=(label, config),
             daemon=True,
         ).start()
 
-    def _local_command_worker(self, label: str, command: list[str]) -> None:
+    def _local_command_worker(self, label: str, config: LocalDiagnosticConfig) -> None:
+        if not isinstance(config, LocalDiagnosticConfig) or config not in LOCAL_DIAGNOSTICS.values():
+            self.result_queue.put(("tool_error", label, "Rejected an unapproved diagnostic configuration."))
+            return
+
+        command = [str(config.executable), *config.arguments]
         try:
-            result = subprocess.run(
+            process = subprocess.Popen(
                 command,
-                capture_output=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
                 text=True,
                 errors="replace",
-                timeout=15,
+                bufsize=1,
                 shell=False,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
-            output = (result.stdout + "\n" + result.stderr).strip()
-            if not output:
-                output = "The command returned no output."
-            if len(output) > 25_000:
-                output = output[:25_000] + "\n\n[Output truncated at 25,000 characters.]"
-            if result.returncode:
-                output = f"Exit code: {result.returncode}\n\n{output}"
-            self.result_queue.put(("tool_success", label, output))
-        except (OSError, subprocess.TimeoutExpired) as error:
+            output_count = 0
+            truncated = False
+
+            def forward_output() -> None:
+                nonlocal output_count, truncated
+                if process.stdout is None:
+                    return
+                for line in process.stdout:
+                    remaining = MAX_DIAGNOSTIC_OUTPUT - output_count
+                    if remaining <= 0:
+                        if not truncated:
+                            self.result_queue.put(
+                                ("tool_output", label, "\n[Output truncated at 25,000 characters.]\n")
+                            )
+                            truncated = True
+                        continue
+                    chunk = line[:remaining]
+                    output_count += len(chunk)
+                    if chunk:
+                        self.result_queue.put(("tool_output", label, chunk))
+                    if len(chunk) < len(line) and not truncated:
+                        self.result_queue.put(
+                            ("tool_output", label, "\n[Output truncated at 25,000 characters.]\n")
+                        )
+                        truncated = True
+
+            reader = threading.Thread(target=forward_output, daemon=True)
+            reader.start()
+            try:
+                return_code = process.wait(timeout=config.timeout_seconds)
+                result = str(return_code)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                result = "timeout"
+            reader.join()
+            if process.stdout is not None:
+                process.stdout.close()
+            self.result_queue.put(("tool_complete", label, result))
+        except OSError as error:
             self.result_queue.put(("tool_error", label, f"Could not run the local diagnostic: {error}"))
 
     def _scan_target(self) -> None:
@@ -562,6 +620,24 @@ class AegisApp:
                     if not self.input.get("1.0", "end-1c").strip():
                         self.input.insert("1.0", user_text)
                     self.status_var.set("Request failed. Correct the issue and try again.")
+                elif kind == "tool_output":
+                    self.last_tool_output += content
+                    self._append_console_chunk(content)
+                    continue
+                elif kind == "tool_complete":
+                    if not self.last_tool_output:
+                        self.last_tool_output = "The command returned no output."
+                        self._append_console_chunk(f"{self.last_tool_output}\n")
+                    if content == "timeout":
+                        self._append_console_chunk("\n[Stopped after the configured timeout.]\n")
+                        self.status_var.set("Local diagnostic stopped at its timeout.")
+                    elif content == "0":
+                        self.status_var.set("Local diagnostic finished successfully.")
+                    else:
+                        self._append_console_chunk(f"\n[Exit code: {content}]\n")
+                        self.status_var.set(f"Local diagnostic finished with exit code {content}.")
+                    self._set_busy(False)
+                    continue
                 elif kind == "tool_success":
                     self.last_tool_output = content
                     self._write_conversation(user_text, content)
@@ -579,6 +655,12 @@ class AegisApp:
         self.output.insert("end", f"{speaker}\n", "speaker")
         self.output.insert("end", f"{content}\n\n")
         self.output.tag_configure("speaker", font=("Segoe UI", 10, "bold"))
+        self.output.see("end")
+        self.output.configure(state="disabled")
+
+    def _append_console_chunk(self, content: str) -> None:
+        self.output.configure(state="normal")
+        self.output.insert("end", content)
         self.output.see("end")
         self.output.configure(state="disabled")
 
