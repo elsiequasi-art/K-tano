@@ -16,6 +16,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $personaData = "$(Join-Path $root 'PERSONA.md');."
+$sandboxRunnerData = "$(Join-Path $root 'aegis_sandbox_runner.py');."
 $buildArgs = @(
     "-m",
     "PyInstaller",
@@ -27,6 +28,8 @@ $buildArgs = @(
     "Aegis",
     "--add-data",
     $personaData,
+    "--add-data",
+    $sandboxRunnerData,
     "--distpath",
     (Join-Path $root "dist"),
     "--workpath",
