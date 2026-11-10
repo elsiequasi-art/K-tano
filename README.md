@@ -2,7 +2,7 @@
 
 Aegis is a Windows desktop AI assistant for authorized, defensive security work. Its task modes cover code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, and safe learning exercises.
 
-The app analyzes only text you provide or explicitly choose to open. It does not run shell commands, scan networks, or modify reviewed files.
+The app analyzes text you provide or explicitly choose to open. Its local tools are user-triggered: three fixed read-only diagnostics, a single-IP TCP connect check capped at 32 ports, and a button to open installed Wireshark. Every diagnostic, scan, and Wireshark launch asks the user to confirm authorization. It does not execute arbitrary AI-generated commands, use stealth modes, or modify reviewed files. Wireshark capture interfaces and start/stop controls remain in Wireshark.
 
 ## Windows setup
 
@@ -20,7 +20,7 @@ The build uses PyInstaller from **requirements-build.txt** in a project-local vi
 
 Aegis does not include or save an API key. Enter a key in the app for the current session or set **OPENAI_API_KEY** before launching. The key is not written to settings or source files.
 
-Your prompt, selected file text, and recent conversation context are sent to the OpenAI Responses API only after you click Send. Requests set response storage to false, and Aegis does not save conversation history locally. Provider policies still govern data handling and retention. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
+Your prompt, selected file text, and recent conversation context are sent to the OpenAI Responses API only after you click Send. Local diagnostic output stays on this PC unless you choose Use last tool result and then click Send. Requests set response storage to false, and Aegis does not save conversation history locally. Provider policies still govern data handling and retention. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
 
 This build is intended for one person's local use with their own API key. Do not embed or distribute a personal key with the app. A multi-user service would need a trusted server-side credential design.
 
@@ -39,7 +39,7 @@ Use Add text file to load a source, log, or configuration file up to 256 KiB. No
 
 ## Safety boundary
 
-Aegis is advisory software, not a penetration-testing engine. It supports scoped, authorized security work and refuses actionable help for credential theft, malware, persistence, evasion, exfiltration, destructive activity, and unauthorized access. It does not initiate external network activity or execute commands.
+Aegis is advisory software with limited, explicit local controls, not an autonomous penetration-testing engine. The TCP check accepts one literal IP and up to 32 comma-separated ports, and requires an authorization checkbox plus a fresh confirmation dialog. It makes sequential TCP connection attempts only; it does not perform UDP scans, service enumeration, stealth, exploitation, or broad-range scanning. The fixed local diagnostics and Wireshark launcher also ask for authorization. The AI cannot trigger these controls.
 
 The complete assistant persona is in [PERSONA.md](PERSONA.md).
 
