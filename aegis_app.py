@@ -35,6 +35,10 @@ MAX_SCAN_PORTS = 32
 MAX_SCAN_HOSTS = 256
 SCAN_CONNECT_TIMEOUT = 0.4
 MAX_CAPTURE_BYTES = 100 * 1024 * 1024
+AUTHORIZED_SCAN_RANGES = tuple(
+    ipaddress.IPv4Network(scope)
+    for scope in ("10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "127.0.0.0/8")
+)
 MAX_DIAGNOSTIC_OUTPUT = 25_000
 MAX_SEARCH_DOMAINS = 10
 MAX_SEARCH_QUERY_CHARACTERS = 500
@@ -758,7 +762,7 @@ class AegisApp:
         self.workspace.add(tab, text="Network")
         ttk.Label(
             tab,
-            text="Run a predefined local diagnostic or an explicitly authorized TCP check. Each action starts only when you click its button.",
+            text="Run fixed local diagnostics, discover hosts on an authorized private subnet, or inspect one HTTPS TLS handshake. Every active check shows its scope and asks for confirmation.",
             wraplength=1000, foreground="#4b5563",
         ).grid(row=0, column=0, sticky="w", pady=(0, 12))
 
@@ -1337,6 +1341,63 @@ class AegisApp:
                 target,
                 f"Checked {len(ports)} requested TCP port(s); {len(open_ports)} accepted a connection ({', '.join(map(str, open_ports)) or 'none observed'}).",
             )
+
+    def _record_network_scan_findings(self, network: str, ports: list[int], hosts: list[str], active: dict) -> None:
+        timestamp = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        existing_by_asset = {
+            finding["asset"]: finding for finding in self.findings
+            if finding.get("signature_id") == "TCP-OPEN-001"
+            and finding.get("source") == "TCP connect check"
+            and finding.get("status") != "Resolved"
+        }
+        for host in hosts:
+            prior = self.port_baselines.setdefault(host, {})
+            open_ports = set(active.get(host, ()))
+            for port in ports:
+                key = f"{host}:{port}"
+                finding = existing_by_asset.get(key)
+                if port in open_ports:
+                    evidence = "A TCP connect succeeded from this computer; this does not identify a service."
+                    if finding is None:
+                        finding = {
+                            "signature_id": "TCP-OPEN-001",
+                            "rule_key": "tcp_open",
+                            "title": "TCP port accepted a connection",
+                            "severity": "Info",
+                            "asset": key,
+                            "source": "TCP connect check",
+                            "status": "Open",
+                            "validation": "New observation" if port not in prior else "Open on repeat check",
+                            "evidence": evidence,
+                            "remediation": "Confirm the listener is expected and restrict exposure according to the asset's role.",
+                            "created_at": timestamp,
+                            "updated_at": timestamp,
+                        }
+                        self.findings.append(finding)
+                        existing_by_asset[key] = finding
+                    else:
+                        finding.update({
+                            "evidence": evidence,
+                            "validation": "Still open on repeat check",
+                            "updated_at": timestamp,
+                            "status": "Open",
+                        })
+                    prior[port] = True
+                else:
+                    if finding is not None and prior.get(port):
+                        finding.update({
+                            "status": "Resolved",
+                            "validation": "Not observed open on repeat check",
+                            "evidence": "The TCP connect did not succeed on this repeat check; this is not proof that the port is always closed.",
+                            "updated_at": timestamp,
+                        })
+                    prior[port] = False
+        self._render_findings()
+        self._record_assessment_event(
+            "TCP private-network check", network,
+            f"Checked {len(hosts)} address(es) and {len(ports)} TCP port(s); "
+            f"{sum(len(active.get(host, ())) for host in hosts)} open host/port pair(s) observed.",
+        )
 
     def _analyze_python_file(self) -> None:
         if self.busy:
@@ -2373,10 +2434,10 @@ class AegisApp:
                 parent=self.root,
             )
             return
-        if network.version != 4 or not network.is_private:
+        if network.version != 4 or not any(network.subnet_of(scope) for scope in AUTHORIZED_SCAN_RANGES):
             messagebox.showwarning(
                 "Scope limited",
-                "Network checks are limited to private IPv4 ranges and loopback.",
+                "Network checks are limited to RFC 1918 private IPv4 ranges and loopback.",
                 parent=self.root,
             )
             return
@@ -2999,16 +3060,8 @@ class AegisApp:
                     self._record_port_results(user_text, content["ports"], content["open_ports"])
                     continue
                 elif kind == "network_scan_result":
-                    for host in content["hosts"]:
-                        self._record_port_results(
-                            host, content["ports"], content["active"].get(host, []),
-                            render=False, record_event=False,
-                        )
-                    self._render_findings()
-                    self._record_assessment_event(
-                        "TCP private-network check", user_text,
-                        f"Checked {content['hosts_checked']} address(es) with {content['attempts']} TCP connect attempts; "
-                        f"{len(content['active'])} host(s) accepted at least one connection.",
+                    self._record_network_scan_findings(
+                        user_text, content["ports"], content["hosts"], content["active"]
                     )
                     self.last_tool_output = content["report"]
                     self._write_conversation("TCP private-network check", content["report"])
