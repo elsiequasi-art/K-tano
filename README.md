@@ -1,33 +1,46 @@
-# K-tano — Ethical Hacking AI Persona Assistant
+# K-tano — Aegis Ethical Security Assistant
 
-K-tano is a ready-to-use persona prompt for an AI assistant focused on authorized security work. It helps with threat modeling, secure code and configuration reviews, vulnerability understanding, incident triage, and practical remediation.
+Aegis is a Windows desktop AI assistant for authorized, defensive security work. Its task modes cover code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, and safe learning exercises.
 
-The persona is defined in [PERSONA.md](PERSONA.md). This repository contains prompt documentation; it does not scan systems, execute tests, or establish permission to assess a target.
+The app analyzes only text you provide or explicitly choose to open. It does not run shell commands, scan networks, or modify reviewed files.
 
-## Get started
+## Windows setup
 
-1. Copy the complete prompt from [PERSONA.md](PERSONA.md) into the system-instructions field of your AI assistant.
-2. Describe the asset or code you are authorized to assess, the boundaries of the work, and the outcome you need.
-3. Redact credentials, tokens, private keys, personal data, and other secrets before sharing material.
+Requirements: Windows 10 or 11, Python 3.10 or newer with Tkinter for building from source, an OpenAI API key, and internet access for model requests.
 
-A useful opening request is:
+To build and install from source:
 
-> Review this redacted reverse-proxy configuration for security weaknesses. It is for my staging environment; do not perform live testing. Give me prioritized findings, concrete fixes, and safe validation steps.
+1. Open PowerShell in this repository.
+2. Run **.\build_windows.ps1** to create **dist\Aegis.exe**.
+3. Run **.\install_windows.ps1** to install Aegis for the current user and add a Start menu shortcut.
 
-## What K-tano helps with
+The build uses PyInstaller from **requirements-build.txt** in a project-local virtual environment. No administrator access is required.
 
-- Threat modeling and defensive security design
-- Secure code, dependency, and configuration reviews
-- Vulnerability explanations, impact assessment, and remediation
-- Incident triage, detection ideas, and hardening plans
-- Safe, isolated learning exercises and non-destructive validation
+## API key and privacy
 
-## Boundaries
+Aegis does not include or save an API key. Enter a key in the app for the current session or set **OPENAI_API_KEY** before launching. The key is not written to settings or source files.
 
-K-tano is intended for systems you own or are explicitly authorized to assess. It asks for scope when that is unclear and keeps recommendations within the stated boundaries. It does not provide actionable help for credential theft, phishing, malware, persistence, evasion, stealth, exfiltration, destructive activity, or unauthorized access. When a request crosses those boundaries, it redirects to defensive analysis and safer alternatives.
+Your prompt, selected file text, and recent conversation context are sent to the OpenAI Responses API only after you click Send. Requests set response storage to false, and Aegis does not save conversation history locally. Provider policies still govern data handling and retention. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
 
-Authorization for one asset or activity does not imply authorization for another. Do not include secrets in prompts.
+This build is intended for one person's local use with their own API key. Do not embed or distribute a personal key with the app. A multi-user service would need a trusted server-side credential design.
 
-## Status
+## Task modes
 
-This is a prompt-based assistant specification, not a hosted application or autonomous scanner. Review the persona prompt and adapt it to your organization's policies before use.
+- General security assistant
+- Code review
+- Configuration review
+- Threat model
+- Incident triage
+- Vulnerability explanation
+- Hardening plan
+- Learning lab
+
+Use Add text file to load a source, log, or configuration file up to 256 KiB. Nothing is sent until you click Send. Save the latest answer as a Markdown or text report.
+
+## Safety boundary
+
+Aegis is advisory software, not a penetration-testing engine. It supports scoped, authorized security work and refuses actionable help for credential theft, malware, persistence, evasion, exfiltration, destructive activity, and unauthorized access. It does not initiate external network activity or execute commands.
+
+The complete assistant persona is in [PERSONA.md](PERSONA.md).
+
+
