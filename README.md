@@ -6,6 +6,10 @@ The app analyzes text you provide or explicitly choose to open. Its local tools 
 
 The user may also enable live web search per request before clicking Send. Search options include an exact query, optional allowed hostnames (up to 10), and low, medium, or high search context. The default is low for focused results. Search-enabled answers display clickable inline citations and source links. Web search is limited to research; it does not probe or scan targets.
 
+The Assessment dashboard records scoped TCP connect results, HTTP response-header signatures, and local Python static-analysis findings. TCP checks accept one literal IP and up to 32 ports. Endpoint checks send one HEAD request to one exact HTTP(S) URL and never follow redirects or send credentials, a body, or test payloads. The counter-test repeats the same request and compares open findings. Each network action requires an authorization checkbox plus a fresh confirmation dialog. The Python analyzer reads one user-selected `.py` file up to 256 KiB, detects selected unsafe patterns and loop/performance heuristics, and never executes source code. It does not discover arbitrary hosts or crawl endpoints.
+
+Findings and action logs export to Markdown or JSON. The dashboard prepares server configuration drafts for Nginx, Apache, or IIS and can fill the chat with a structured code-patch request. The user reviews the prompt and clicks Send; saving drafts requires confirmation. Aegis never applies or executes generated patches or remediation scripts.
+
 ## Windows setup
 
 Requirements: Windows 10 or 11, Python 3.10 or newer with Tkinter for building from source, an OpenAI API key, and internet access for model requests.
@@ -23,6 +27,8 @@ The build uses PyInstaller from **requirements-build.txt** in a project-local vi
 Aegis does not include or save an API key. Enter a key in the app for the current session or set **OPENAI_API_KEY** before launching. The key is not written to settings or source files.
 
 Your prompt, selected file text, and recent conversation context are sent to the OpenAI Responses API only after you click Send. If live web search is enabled, the request also invokes OpenAI's hosted web search and applies the optional domain filters. Local diagnostic output stays on this PC unless you choose Use last tool result and then click Send. Requests set response storage to false, and Aegis does not save conversation history locally. Provider policies still govern data handling and retention; API usage may incur charges. Do not submit credentials, private keys, personal data, or material you are not allowed to share.
+
+The local Python analyzer never sends file contents. If you ask the AI to prepare a code patch, Aegis asks whether to include the last analyzed source; it remains in the request box until you click Send. Assessment exports and remediation drafts are written only after a file selection and explicit confirmation.
 
 This build is intended for one person's local use with their own API key. Do not embed or distribute a personal key with the app. A multi-user service would need a trusted server-side credential design.
 
