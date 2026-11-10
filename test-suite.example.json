@@ -1,0 +1,35 @@
+{
+  "tests": [
+    {
+      "name": "processes a representative payload",
+      "function": "process_payload",
+      "args": [],
+      "kwargs": {
+        "payload": {
+          "id": "synthetic-001",
+          "active": true
+        }
+      },
+      "expect": {
+        "return_type": "dict"
+      }
+    },
+    {
+      "name": "rejects an invalid payload",
+      "class": "PayloadProcessor",
+      "method": "process",
+      "constructor_args": [],
+      "constructor_kwargs": {},
+      "args": [
+        {
+          "id": ""
+        }
+      ],
+      "kwargs": {},
+      "expect": {
+        "exception": "ValueError"
+      }
+    }
+  ]
+}
+
