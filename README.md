@@ -2,7 +2,7 @@
 
 Aegis is a Windows desktop AI assistant for authorized, defensive security work. Its task modes cover code and configuration review, threat modeling, incident triage, vulnerability explanations, hardening plans, and safe learning exercises.
 
-The app analyzes text you provide or explicitly choose to open. Its local tools are user-triggered: three fixed read-only diagnostics, a single-IP TCP connect check capped at 32 ports, and a button to open installed Wireshark. Every diagnostic, scan, and Wireshark launch asks the user to confirm authorization. It does not execute arbitrary AI-generated commands, use stealth modes, or modify reviewed files. Wireshark capture interfaces and start/stop controls remain in Wireshark.
+The app analyzes text you provide or explicitly choose to open. Its local tools are user-triggered: three fixed read-only diagnostics, a single-IP TCP connect check capped at 32 ports, and a button to open installed Wireshark. Each diagnostic uses a structured allowlist entry with a fixed absolute executable path and argument list, and streams stdout to the console buffer. Every diagnostic, scan, and Wireshark launch asks the user to confirm authorization. It does not execute arbitrary AI-generated commands, accept free-form command arguments, use stealth modes, or modify reviewed files. Wireshark capture interfaces and start/stop controls remain in Wireshark.
 
 ## Windows setup
 
