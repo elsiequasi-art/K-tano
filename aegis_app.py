@@ -1492,11 +1492,26 @@ class AegisApp:
                 "--entry-module", payload["entry_module"],
                 "--suite", "/aegis/suite.json", "--workspace", "/workspace",
             ]
-            created = self._docker_cli(create_args, timeout=30)
+            try:
+                created = self._docker_cli(create_args, timeout=30)
+            except Exception:
+                try:
+                    self._docker_cli(["rm", "-f", container_name], timeout=10)
+                except Exception:
+                    pass
+                raise
             if created.returncode != 0:
+                try:
+                    self._docker_cli(["rm", "-f", container_name], timeout=10)
+                except Exception:
+                    pass
                 raise RuntimeError("Docker Desktop could not create the isolated test container.\n" + created.aegis_output[-2_000:])
             container_id = created.aegis_output.strip().splitlines()[-1]
             if not re.fullmatch(r"[a-fA-F0-9]{12,64}", container_id):
+                try:
+                    self._docker_cli(["rm", "-f", container_name], timeout=10)
+                except Exception:
+                    pass
                 raise RuntimeError("Docker Desktop returned an invalid sandbox container ID.")
             try:
                 process = subprocess.Popen(
